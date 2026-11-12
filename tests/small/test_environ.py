@@ -906,6 +906,35 @@ def test_getDefaultKVStoreType(default_yml, os_env, result):
             environ.getDefaultKVStoreType(vars_scope)
     assert vars_scope["splunk"]["kvstore"] == result
 
+
+@pytest.mark.parametrize("value,expected", [
+    ("true", True), ("TRUE", True), (" false ", False), ("FALSE", False),
+])
+def test_getKVServiceEnabled_preserves_explicit_boolean(value, expected):
+    variables = {"splunk": {}, "ansible_environment": {"KEEP_ME": "value", "SPLUNK_KVSERVICE_ENABLED": "stale"}}
+    with patch("os.environ", new={"SPLUNK_KVSERVICE_ENABLED": value}):
+        environ.getKVServiceEnabled(variables)
+    assert variables["splunk_kvservice_enabled"] is expected
+    assert variables["ansible_environment"] == {
+        "KEEP_ME": "value", "SPLUNK_KVSERVICE_ENABLED": str(expected).lower(),
+    }
+
+
+def test_getKVServiceEnabled_omits_policy_when_environment_is_unset():
+    variables = {"splunk": {"kvstore": {"default_kvstore_type": "external"}}}
+    with patch("os.environ", new={}):
+        environ.getKVServiceEnabled(variables)
+    assert "splunk_kvservice_enabled" not in variables
+    assert "ansible_environment" not in variables
+
+
+@pytest.mark.parametrize("value", ["", "yes", "1", "disabled", "sometimes"])
+def test_getKVServiceEnabled_rejects_invalid_value(value):
+    with patch("os.environ", new={"SPLUNK_KVSERVICE_ENABLED": value}):
+        with pytest.raises(ValueError, match="must be either 'true' or 'false'"):
+            environ.getKVServiceEnabled({"splunk": {}})
+
+
 @pytest.mark.parametrize(("es_enablement", "os_env", "result"),
             [
                 (None, {}, ""),
@@ -1260,10 +1289,6 @@ def test_getSplunkAppsLocal(default_yml, os_env, apps_count):
                 # Check splunk.kvstore.port
                 ({"splunk": {"kvstore" :{"port": "9165"}}}, {}, "splunk.kvstore.port", "9165"),
                 ({}, {"SPLUNK_KVSTORE_PORT": "9265"}, "splunk.kvstore.port", "9265"),
-                # Check splunk.kvstore.kvservice_connection_string
-                ({"splunk": {"kvstore": {"kvservice_connection_string": "splunk-kvservice.my-namespace.svc.cluster.local:443"}}}, {}, "splunk.kvstore.kvservice_connection_string", "splunk-kvservice.my-namespace.svc.cluster.local:443"),
-                ({}, {"KVSERVICE_CONNECTION_STRING": "splunk-kvservice.my-namespace.svc.cluster.local:443"}, "splunk.kvstore.kvservice_connection_string", "splunk-kvservice.my-namespace.svc.cluster.local:443"),
-                ({"splunk": {"kvstore": {"kvservice_connection_string": "old-value.svc.cluster.local:443"}}}, {"KVSERVICE_CONNECTION_STRING": "new-value.svc.cluster.local:443"}, "splunk.kvstore.kvservice_connection_string", "new-value.svc.cluster.local:443"),
                 # Check splunk.connection_timeout
                 ({"splunk": {"connection_timeout": 60}}, {}, "splunk.connection_timeout", 60),
                 ({}, {"SPLUNK_CONNECTION_TIMEOUT": 200}, "splunk.connection_timeout", 200),
@@ -1282,7 +1307,7 @@ def test_overrideEnvironmentVars(default_yml, os_env, key, value):
                                 "svc_port": 8089,
                                 "s2s": {"port": 9997},
                                 "appserver": {"port": 8065},
-                                "kvstore": {"port": 8191, "kvservice_connection_string": None},
+                                "kvstore": {"port": 8191},
                                 "hec_token": "abcd1234",
                                 "enable_service": False,
                                 "service_name": "Splunkd",

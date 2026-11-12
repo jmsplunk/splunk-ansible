@@ -139,6 +139,7 @@ def getDefaultVars():
     getHEC(defaultVars)
     getSecrets(defaultVars)
     getSplunkPaths(defaultVars)
+    getKVServiceEnabled(defaultVars)
     normalizeNoahConf(defaultVars)
     getIndexerClustering(defaultVars)
     getSearchHeadClustering(defaultVars)
@@ -901,7 +902,6 @@ def overrideEnvironmentVars(vars_scope):
     vars_scope["splunk"]["allow_upgrade"] = os.environ.get('SPLUNK_ALLOW_UPGRADE', vars_scope["splunk"]["allow_upgrade"])
     vars_scope["splunk"]["appserver"]["port"] = os.environ.get('SPLUNK_APPSERVER_PORT', vars_scope["splunk"]["appserver"]["port"])
     vars_scope["splunk"]["kvstore"]["port"] = os.environ.get('SPLUNK_KVSTORE_PORT', vars_scope["splunk"]["kvstore"]["port"])
-    vars_scope["splunk"]["kvstore"]["kvservice_connection_string"] = os.environ.get('KVSERVICE_CONNECTION_STRING', vars_scope["splunk"]["kvstore"].get("kvservice_connection_string"))
     vars_scope["splunk"]["connection_timeout"] = int(os.environ.get('SPLUNK_CONNECTION_TIMEOUT', vars_scope["splunk"]["connection_timeout"]))
 
     if vars_scope["splunk"]["splunk_http_enabled"] == "false" and "forwarder" not in vars_scope["splunk"]["role"].lower():
@@ -960,6 +960,19 @@ def getDefaultKVStoreType(vars_scope):
     default_kvstore_type = val.lower()
     vars_scope["splunk"].setdefault("kvstore", {})
     vars_scope["splunk"]["kvstore"]["default_kvstore_type"] = default_kvstore_type
+
+def getKVServiceEnabled(vars_scope):
+    """Select the operator KV Store policy only with an explicit environment input."""
+    value = os.environ.get("SPLUNK_KVSERVICE_ENABLED")
+    if value is None:
+        return
+    normalized = str(value).strip().lower()
+    if normalized not in ("true", "false"):
+        raise ValueError("SPLUNK_KVSERVICE_ENABLED must be either 'true' or 'false'")
+    vars_scope["splunk_kvservice_enabled"] = normalized == "true"
+    # Preserve the policy signal for Splunk CLI calls under privilege escalation.
+    vars_scope.setdefault("ansible_environment", {})["SPLUNK_KVSERVICE_ENABLED"] = normalized
+
 
 def getNodeSidecarPostgres(vars_scope):
     """
